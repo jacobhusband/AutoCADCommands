@@ -10,52 +10,9 @@ using Autodesk.AutoCAD.Colors;
 using System.IO;
 using System.Windows.Forms;
 using OfficeOpenXml;
-using Autodesk.AutoCAD.PlottingServices;
-using System.Windows.Media.Media3D;
-
-[assembly: CommandClass(typeof(AutoCADCommands.MyCommands))]
-[assembly: CommandClass(typeof(AutoCADCommands.HotkeyManager))]
 
 namespace AutoCADCommands
 {
-  public static class PolylineExtensions
-  {
-    public static bool IsPointInside(this Polyline polyline, Point3d point)
-    {
-      int numIntersections = 0;
-      for (int i = 0; i < polyline.NumberOfVertices; i++)
-      {
-        Point3d point1 = polyline.GetPoint3dAt(i);
-        Point3d point2 = polyline.GetPoint3dAt((i + 1) % polyline.NumberOfVertices); // Get next point, or first point if we're at the end
-
-        // Check if point is on an horizontal segment
-        if (point1.Y == point2.Y && point1.Y == point.Y && point.X > Math.Min(point1.X, point2.X) && point.X < Math.Max(point1.X, point2.X))
-        {
-          return true;
-        }
-
-        if (point.Y > Math.Min(point1.Y, point2.Y) && point.Y <= Math.Max(point1.Y, point2.Y) && point.X <= Math.Max(point1.X, point2.X) && point1.Y != point2.Y)
-        {
-          double xinters = (point.Y - point1.Y) * (point2.X - point1.X) / (point2.Y - point1.Y) + point1.X;
-
-          // Check if point is on the polygon boundary (other than horizontal)
-          if (Math.Abs(point.X - xinters) < Double.Epsilon)
-          {
-            return true;
-          }
-
-          // Count intersections
-          if (point.X < xinters)
-          {
-            numIntersections++;
-          }
-        }
-      }
-      // If the number of intersections is odd, the point is inside.
-      return numIntersections % 2 != 0;
-    }
-  }
-
   public class MyCommands
   {
     [CommandMethod("WO")]
@@ -830,7 +787,7 @@ namespace AutoCADCommands
             Point3d center = new Point3d((bounds.MinPoint.X + bounds.MaxPoint.X) / 2, (bounds.MinPoint.Y + bounds.MaxPoint.Y) / 2, 0);
 
             // Check if the center of the bounding box lies within the polyline. If not, use the first vertex.
-            if (!polyline.IsPointInside(center))
+            if (!IsPointInside(polyline, center))
             {
               center = polyline.GetPoint3dAt(0);
             }
@@ -1224,6 +1181,41 @@ namespace AutoCADCommands
       var ed = doc.Editor;
 
       return (doc, db, ed);
+    }
+
+    public static bool IsPointInside(Polyline polyline, Point3d point)
+    {
+      int numIntersections = 0;
+      for (int i = 0; i < polyline.NumberOfVertices; i++)
+      {
+        Point3d point1 = polyline.GetPoint3dAt(i);
+        Point3d point2 = polyline.GetPoint3dAt((i + 1) % polyline.NumberOfVertices); // Get next point, or first point if we're at the end
+
+        // Check if point is on an horizontal segment
+        if (point1.Y == point2.Y && point1.Y == point.Y && point.X > Math.Min(point1.X, point2.X) && point.X < Math.Max(point1.X, point2.X))
+        {
+          return true;
+        }
+
+        if (point.Y > Math.Min(point1.Y, point2.Y) && point.Y <= Math.Max(point1.Y, point2.Y) && point.X <= Math.Max(point1.X, point2.X) && point1.Y != point2.Y)
+        {
+          double xinters = (point.Y - point1.Y) * (point2.X - point1.X) / (point2.Y - point1.Y) + point1.X;
+
+          // Check if point is on the polygon boundary (other than horizontal)
+          if (Math.Abs(point.X - xinters) < Double.Epsilon)
+          {
+            return true;
+          }
+
+          // Count intersections
+          if (point.X < xinters)
+          {
+            numIntersections++;
+          }
+        }
+      }
+      // If the number of intersections is odd, the point is inside.
+      return numIntersections % 2 != 0;
     }
 
     public static void CreateEntitiesAtEndPoint(Transaction trans, Extents3d extents, Point3d endPoint, string text1, string text2)
@@ -3059,276 +3051,6 @@ namespace AutoCADCommands
       return pt.X >= extents.MinPoint.X && pt.X <= extents.MaxPoint.X &&
              pt.Y >= extents.MinPoint.Y && pt.Y <= extents.MaxPoint.Y &&
              pt.Z >= extents.MinPoint.Z && pt.Z <= extents.MaxPoint.Z;
-    }
-  }
-
-  public class HotkeyManager
-  {
-    public static string scale = "1/4";
-
-    [CommandMethod("SETSCALE")]
-    public void SetScale()
-    {
-      Editor ed = Autodesk.AutoCAD.ApplicationServices.Application.DocumentManager.MdiActiveDocument.Editor;
-      PromptResult result = ed.GetString("\nEnter new scale (e.g., 3/16, 1/8, 3/32, 1/16): ");
-
-      if (result.Status == PromptStatus.OK)
-      {
-        scale = result.StringResult;
-        ed.WriteMessage($"\nScale set to {scale}");
-      }
-      else
-      {
-        ed.WriteMessage("\nScale not changed.");
-      }
-    }
-
-    [CommandMethod("N")]
-    public void CreateNote()
-    {
-      Document doc = Autodesk.AutoCAD.ApplicationServices.Application.DocumentManager.MdiActiveDocument;
-      Editor ed = doc.Editor;
-
-      PromptStringOptions pso = new PromptStringOptions("\nEnter text content for the note: ");
-      PromptResult pr = ed.GetString(pso);
-      if (pr.Status != PromptStatus.OK) return;
-
-      string textContent = pr.StringResult;
-
-      PromptPointResult ppr = ed.GetPoint("Click where you want the center of the hexagon: ");
-      if (ppr.Status != PromptStatus.OK) return;
-
-      Point3d center = ppr.Value;
-      double scaleFactor = GetScaleFactor();
-      double sideLength = 5.1962 * scaleFactor;
-      double textHeight = 4.5 * scaleFactor;
-
-      using (Transaction tr = doc.Database.TransactionManager.StartTransaction())
-      {
-        BlockTable bt = (BlockTable)tr.GetObject(doc.Database.BlockTableId, OpenMode.ForRead);
-        BlockTableRecord btr = (BlockTableRecord)tr.GetObject(bt[BlockTableRecord.ModelSpace], OpenMode.ForWrite);
-
-        // Create hexagon
-        Polyline hexagon = new Polyline(6);
-        for (int i = 0; i < 6; i++)
-        {
-          double angle = (Math.PI / 3.0) * i;
-          double x = center.X + sideLength * Math.Cos(angle);
-          double y = center.Y + sideLength * Math.Sin(angle);
-          hexagon.AddVertexAt(i, new Point2d(x, y), 0, 0, 0);
-        }
-        hexagon.Closed = true;
-        hexagon.Layer = "E-TXT1";
-        btr.AppendEntity(hexagon);
-        tr.AddNewlyCreatedDBObject(hexagon, true);
-
-        // Create text object
-        DBText text = new DBText();
-        text.Position = center;
-        text.Height = textHeight;
-        text.TextString = textContent;
-        text.HorizontalMode = TextHorizontalMode.TextCenter;
-        text.VerticalMode = TextVerticalMode.TextVerticalMid;
-        text.AlignmentPoint = center;
-        text.Layer = "E-TXT1";
-        text.WidthFactor = 0.85; // Set the width factor to 0.85
-
-        // Set text style
-        TextStyleTable tst = (TextStyleTable)tr.GetObject(doc.Database.TextStyleTableId, OpenMode.ForRead);
-        if (tst.Has("rpm"))
-        {
-          text.TextStyleId = tst["rpm"];
-        }
-
-        btr.AppendEntity(text);
-        tr.AddNewlyCreatedDBObject(text, true);
-
-        tr.Commit();
-      }
-
-      ed.WriteMessage("\nHexagon and text created.");
-    }
-
-    [CommandMethod("PU")]
-    public void CreatePanelUp()
-    {
-      DrawPanel(0);
-    }
-
-    [CommandMethod("PD")]
-    public void CreatePanelDown()
-    {
-      DrawPanel(180);
-    }
-
-    [CommandMethod("PR")]
-    public void CreatePanelRight()
-    {
-      DrawPanel(270);
-    }
-
-    [CommandMethod("PL")]
-    public void CreatePanelLeft()
-    {
-      DrawPanel(90);
-    }
-
-    private void DrawPanel(double rotationAngle)
-    {
-      Document doc = Autodesk.AutoCAD.ApplicationServices.Application.DocumentManager.MdiActiveDocument;
-      Editor ed = doc.Editor;
-
-      PromptPointResult ppr = ed.GetPoint("Click where you want the base point of the panel: ");
-      if (ppr.Status != PromptStatus.OK) return;
-
-      Point3d basePoint = ppr.Value;
-      double scaleFactor = GetScaleFactor();
-
-      double width = 20.0;
-      double height = 6.0;
-      double horizontalLineLength = 26.2940;
-      double verticalLineLength = 7.5311;
-      double ellipseHeight = 6.3907 * scaleFactor;
-      double textHeight = 4.5 * scaleFactor;
-
-      using (Transaction tr = doc.Database.TransactionManager.StartTransaction())
-      {
-        BlockTable bt = (BlockTable)tr.GetObject(doc.Database.BlockTableId, OpenMode.ForRead);
-        BlockTableRecord btr = (BlockTableRecord)tr.GetObject(bt[BlockTableRecord.ModelSpace], OpenMode.ForWrite);
-
-        // Create a rotation matrix
-        Matrix3d rotationMatrix = Matrix3d.Rotation(rotationAngle * (Math.PI / 180), Vector3d.ZAxis, basePoint);
-
-        // Create rectangle
-        Polyline rectangle = new Polyline();
-        rectangle.AddVertexAt(0, new Point2d(basePoint.X - width / 2, basePoint.Y), 0, 0, 0);
-        rectangle.AddVertexAt(1, new Point2d(basePoint.X + width / 2, basePoint.Y), 0, 0, 0);
-        rectangle.AddVertexAt(2, new Point2d(basePoint.X + width / 2, basePoint.Y + height), 0, 0, 0);
-        rectangle.AddVertexAt(3, new Point2d(basePoint.X - width / 2, basePoint.Y + height), 0, 0, 0);
-        rectangle.Closed = true;
-        rectangle.Layer = "E-SYM1";
-        ObjectId rectId = btr.AppendEntity(rectangle);
-        tr.AddNewlyCreatedDBObject(rectangle, true);
-
-        // Hatch the inside of the rectangle
-        Hatch hatch = new Hatch();
-        hatch.SetHatchPattern(HatchPatternType.PreDefined, "SOLID");
-        ObjectIdCollection idCol = new ObjectIdCollection { rectId };
-        hatch.AppendLoop(HatchLoopTypes.Default, idCol);
-        hatch.EvaluateHatch(true);
-        hatch.Layer = "E-SYM1";
-
-        // Apply the rotation to both the rectangle and the hatch
-        rectangle.TransformBy(rotationMatrix);
-        hatch.TransformBy(rotationMatrix);
-
-        // Add hatch to BlockTableRecord
-        btr.AppendEntity(hatch);
-        tr.AddNewlyCreatedDBObject(hatch, true);
-
-        // Create horizontal line on top of the rectangle
-        Line horizontalLine = new Line(
-            new Point3d(basePoint.X - horizontalLineLength / 2, basePoint.Y + height, 0),
-            new Point3d(basePoint.X + horizontalLineLength / 2, basePoint.Y + height, 0)
-        );
-        horizontalLine.Layer = "E-SYM1";
-
-        // Create vertical line from the top of the rectangle's height
-        Line verticalLine = new Line(
-            new Point3d(basePoint.X, basePoint.Y + height, 0),
-            new Point3d(basePoint.X, basePoint.Y + height + verticalLineLength, 0)
-        );
-        verticalLine.Layer = "E-TXT1";
-
-        // Prompt user for text content
-        PromptStringOptions stringOptions = new PromptStringOptions("Enter text content: ");
-        PromptResult stringResult = ed.GetString(stringOptions);
-        string textContent = stringResult.StringResult.ToUpper();
-
-        double baseEllipseHeight = 6.3907;
-        double baseEllipseWidth = 10 + (textContent.Length - 1) * 4;
-        ellipseHeight = baseEllipseHeight * scaleFactor;
-        double ellipseWidth = baseEllipseWidth * scaleFactor;
-        Ellipse ellipse = new Ellipse(
-            new Point3d(basePoint.X, basePoint.Y + height + verticalLineLength + ellipseHeight / 2, 0),
-            Vector3d.ZAxis,
-            new Vector3d(ellipseWidth / 2, 0, 0),
-            baseEllipseHeight / baseEllipseWidth,
-            0,
-            Math.PI * 2
-        );
-        ellipse.Layer = "E-TXT1";
-
-        // Create centered text inside the ellipse
-        DBText text = new DBText
-        {
-          TextString = textContent,
-          Height = textHeight,
-          Position = new Point3d(basePoint.X, basePoint.Y + height + verticalLineLength + ellipseHeight / 2, 0),
-          HorizontalMode = TextHorizontalMode.TextCenter,
-          VerticalMode = TextVerticalMode.TextVerticalMid,
-          AlignmentPoint = new Point3d(basePoint.X, basePoint.Y + height + verticalLineLength + ellipseHeight / 2, 0),
-          Layer = "E-TXT1",
-          WidthFactor = 0.85 // Set the width factor to 0.85
-        };
-
-        // Set text style
-        TextStyleTable tst = (TextStyleTable)tr.GetObject(doc.Database.TextStyleTableId, OpenMode.ForRead);
-        if (tst.Has("rpm"))
-        {
-          text.TextStyleId = tst["rpm"];
-        }
-
-        text.AdjustAlignment(doc.Database);
-
-        // Transform and add the other objects to the BlockTableRecord
-        Entity[] entities = { horizontalLine, verticalLine, ellipse, text };
-        foreach (Entity entity in entities)
-        {
-          entity.TransformBy(rotationMatrix);
-          btr.AppendEntity(entity);
-          tr.AddNewlyCreatedDBObject(entity, true);
-        }
-
-        // Create a rotation matrix to rotate the text and ellipse back to 0 degrees
-        Matrix3d reverseRotationMatrix = Matrix3d.Rotation(-rotationAngle * (Math.PI / 180), Vector3d.ZAxis, ellipse.Center);
-
-        // Apply the reverse rotation to the text and ellipse
-        text.TransformBy(reverseRotationMatrix);
-        ellipse.TransformBy(reverseRotationMatrix);
-
-        double shiftAmount = (1.8047 + 2 * (textContent.Length - 1)) * scaleFactor;
-        if (shiftAmount < 0) shiftAmount = 0;
-
-        // Apply the shift for the "PR" command (270 degrees rotation)
-        if (rotationAngle == 270)
-        {
-          Matrix3d shiftMatrix = Matrix3d.Displacement(new Vector3d(shiftAmount, 0, 0));
-          text.TransformBy(shiftMatrix);
-          ellipse.TransformBy(shiftMatrix);
-        }
-
-        // Apply the shift for the "PL" command (90 degrees rotation)
-        if (rotationAngle == 90)
-        {
-          Matrix3d shiftMatrix = Matrix3d.Displacement(new Vector3d(-shiftAmount, 0, 0));
-          text.TransformBy(shiftMatrix);
-          ellipse.TransformBy(shiftMatrix);
-        }
-
-        tr.Commit();
-      }
-
-      ed.WriteMessage("\nPanel created.");
-    }
-
-    private double GetScaleFactor()
-    {
-      if (scale == "3/16") return 4.0 / 3.0;
-      if (scale == "1/8") return 2;
-      if (scale == "3/32") return 8.0 / 3.0;
-      if (scale == "1/16") return 4;
-      return 1;
     }
   }
 }
