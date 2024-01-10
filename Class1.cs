@@ -9,7 +9,6 @@ using Autodesk.AutoCAD.EditorInput;
 using Autodesk.AutoCAD.Colors;
 using System.IO;
 using System.Windows.Forms;
-using OfficeOpenXml;
 
 namespace AutoCADCommands
 {
@@ -115,92 +114,6 @@ namespace AutoCADCommands
       }
     }
 
-    [CommandMethod("CREATEBLOCK")]
-    public void CREATEBLOCK()
-    {
-      var (doc, db, _) = MyCommands.GetGlobals();
-
-      using (Transaction tr = db.TransactionManager.StartTransaction())
-      {
-        BlockTable bt = (BlockTable)tr.GetObject(db.BlockTableId, OpenMode.ForRead);
-
-        BlockTableRecord existingBtr = null;
-        ObjectId existingBtrId = ObjectId.Null;
-
-        // Check if block already exists
-        if (bt.Has("CIRCLEI"))
-        {
-          existingBtrId = bt["CIRCLEI"];
-
-          if (existingBtrId != ObjectId.Null)
-          {
-            existingBtr = (BlockTableRecord)tr.GetObject(existingBtrId, OpenMode.ForWrite);
-
-            if (existingBtr != null && existingBtr.Name == "CIRCLEI")
-            {
-              doc.Editor.WriteMessage("\nBlock 'CIRCLEI' already exists and matches the new block. Exiting the function.");
-              return; // Exit the function if existing block matches the new block
-            }
-          }
-        }
-
-        // Delete existing block and its contents
-        if (existingBtr != null)
-        {
-          foreach (ObjectId id in existingBtr.GetBlockReferenceIds(true, true))
-          {
-            DBObject obj = tr.GetObject(id, OpenMode.ForWrite);
-            obj.Erase(true);
-          }
-
-          existingBtr.Erase(true);
-
-          doc.Editor.WriteMessage("\nExisting block 'CIRCLEI' and its contents have been deleted.");
-        }
-
-        BlockTableRecord btr = new BlockTableRecord();
-        btr.Name = "CIRCLEI";
-
-        bt.UpgradeOpen();
-        ObjectId btrId = bt.Add(btr);
-        tr.AddNewlyCreatedDBObject(btr, true);
-
-        // Create a circle centered at 0,0 with radius 2.0
-        Circle circle = new Circle(new Point3d(0, 0, 0), new Vector3d(0, 0, 1), 0.09);
-        circle.Color = Autodesk.AutoCAD.Colors.Color.FromColorIndex(ColorMethod.ByLayer, 2); // Set circle color to yellow
-
-        btr.AppendEntity(circle);
-        tr.AddNewlyCreatedDBObject(circle, true);
-
-        // Create a text entity
-        DBText text = new DBText();
-        text.Position = new Point3d(-0.042, -0.045, 0); // centered at the origin
-        text.Height = 0.09; // Set the text height
-        text.TextString = "1";
-        text.Color = Autodesk.AutoCAD.Colors.Color.FromColorIndex(ColorMethod.ByLayer, 2); // Set text color to yellow
-
-        // Check if the text style "ROMANS" exists
-        TextStyleTable textStyleTable = (TextStyleTable)tr.GetObject(db.TextStyleTableId, OpenMode.ForRead);
-        if (textStyleTable.Has("ROMANS"))
-        {
-          text.TextStyleId = textStyleTable["ROMANS"]; // apply the "ROMANS" text style to the text entity
-        }
-
-        // Check if the layer "E-TEXT" exists
-        LayerTable lt = (LayerTable)tr.GetObject(db.LayerTableId, OpenMode.ForRead);
-        if (lt.Has("E-TEXT"))
-        {
-          circle.Layer = "E-TEXT"; // Set the layer of the circle to "E-TEXT"
-          text.Layer = "E-TEXT"; // Set the layer of the text to "E-TEXT"
-        }
-
-        btr.AppendEntity(text);
-        tr.AddNewlyCreatedDBObject(text, true);
-
-        tr.Commit();
-      }
-    }
-
     [CommandMethod("KEEPBREAKERS")]
     public void KEEPBREAKERS()
     {
@@ -219,7 +132,7 @@ namespace AutoCADCommands
           if (prompt == "no" || prompt == "n")
             return;
           else if (prompt == "yes" || prompt == "y")
-            CREATEBLOCK(); // Assuming this function exists and will create the required block
+            CreateBlock(); // Assuming this function exists and will create the required block
         }
 
         var btr = (BlockTableRecord)tr.GetObject(bt[BlockTableRecord.PaperSpace], OpenMode.ForWrite);
@@ -835,6 +748,91 @@ namespace AutoCADCommands
       }
 
       ed.Regen();
+    }
+
+    public void CreateBlock()
+    {
+      var (doc, db, _) = MyCommands.GetGlobals();
+
+      using (Transaction tr = db.TransactionManager.StartTransaction())
+      {
+        BlockTable bt = (BlockTable)tr.GetObject(db.BlockTableId, OpenMode.ForRead);
+
+        BlockTableRecord existingBtr = null;
+        ObjectId existingBtrId = ObjectId.Null;
+
+        // Check if block already exists
+        if (bt.Has("CIRCLEI"))
+        {
+          existingBtrId = bt["CIRCLEI"];
+
+          if (existingBtrId != ObjectId.Null)
+          {
+            existingBtr = (BlockTableRecord)tr.GetObject(existingBtrId, OpenMode.ForWrite);
+
+            if (existingBtr != null && existingBtr.Name == "CIRCLEI")
+            {
+              doc.Editor.WriteMessage("\nBlock 'CIRCLEI' already exists and matches the new block. Exiting the function.");
+              return; // Exit the function if existing block matches the new block
+            }
+          }
+        }
+
+        // Delete existing block and its contents
+        if (existingBtr != null)
+        {
+          foreach (ObjectId id in existingBtr.GetBlockReferenceIds(true, true))
+          {
+            DBObject obj = tr.GetObject(id, OpenMode.ForWrite);
+            obj.Erase(true);
+          }
+
+          existingBtr.Erase(true);
+
+          doc.Editor.WriteMessage("\nExisting block 'CIRCLEI' and its contents have been deleted.");
+        }
+
+        BlockTableRecord btr = new BlockTableRecord();
+        btr.Name = "CIRCLEI";
+
+        bt.UpgradeOpen();
+        ObjectId btrId = bt.Add(btr);
+        tr.AddNewlyCreatedDBObject(btr, true);
+
+        // Create a circle centered at 0,0 with radius 2.0
+        Circle circle = new Circle(new Point3d(0, 0, 0), new Vector3d(0, 0, 1), 0.09);
+        circle.Color = Autodesk.AutoCAD.Colors.Color.FromColorIndex(ColorMethod.ByLayer, 2); // Set circle color to yellow
+
+        btr.AppendEntity(circle);
+        tr.AddNewlyCreatedDBObject(circle, true);
+
+        // Create a text entity
+        DBText text = new DBText();
+        text.Position = new Point3d(-0.042, -0.045, 0); // centered at the origin
+        text.Height = 0.09; // Set the text height
+        text.TextString = "1";
+        text.Color = Autodesk.AutoCAD.Colors.Color.FromColorIndex(ColorMethod.ByLayer, 2); // Set text color to yellow
+
+        // Check if the text style "ROMANS" exists
+        TextStyleTable textStyleTable = (TextStyleTable)tr.GetObject(db.TextStyleTableId, OpenMode.ForRead);
+        if (textStyleTable.Has("ROMANS"))
+        {
+          text.TextStyleId = textStyleTable["ROMANS"]; // apply the "ROMANS" text style to the text entity
+        }
+
+        // Check if the layer "E-TEXT" exists
+        LayerTable lt = (LayerTable)tr.GetObject(db.LayerTableId, OpenMode.ForRead);
+        if (lt.Has("E-TEXT"))
+        {
+          circle.Layer = "E-TEXT"; // Set the layer of the circle to "E-TEXT"
+          text.Layer = "E-TEXT"; // Set the layer of the text to "E-TEXT"
+        }
+
+        btr.AppendEntity(text);
+        tr.AddNewlyCreatedDBObject(text, true);
+
+        tr.Commit();
+      }
     }
 
     public static void HatchSelectedPolyline(ObjectId? polyId = null)
